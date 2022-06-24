@@ -7,6 +7,7 @@ target_sources( cvmix_objects PRIVATE
    shared/cvmix_convection.F90
    shared/cvmix_ddiff.F90
    shared/cvmix_kpp.F90
+   shared/cvmix_tke.F90
    shared/cvmix_math.F90
    shared/cvmix_put_get.F90
    shared/cvmix_shear.F90

@@ -102,6 +102,29 @@ module cvmix_kinds_and_types
     ! A time-invariant coefficient needed for Simmons, et al. tidal mixing
     real(cvmix_r8) :: SimmonsCoeff
 
+    !IDEMIX
+    real(cvmix_r8) :: forc_iw_bottom              ! energy flux into IW at bottom, [m^3/s^3]
+    real(cvmix_r8) :: forc_iw_surface             ! energy flux into IW at surface, [m^3/s^3]           
+
+    !TKE
+    ! wind forcing for TKE, input should be sqrt(taux^2+tauy^2)^(3/2) for flux
+    ! boundary condition; 
+    !with taux, tauy the x and y-components of the surface wind stress; for
+    !Dirichlet BC assignment of uppermost values in tridiag-matrix need to be
+    !adjusted
+    real(cvmix_r8) :: forc_tke_surf
+                    ! units: m^3/s^3
+    !bottom friction 
+    real(cvmix_r8) :: bottom_fric
+                    !units: m^2/s^3
+    !surface buoyancy forcing for TKE 
+    real(cvmix_r8) :: forc_rho_surf
+                    !units: kg/m^2/s
+    !needed
+    real(cvmix_r8) :: dtime 
+    real(cvmix_r8) :: rho_ref 
+
+
     ! Values on interfaces (dimsize = nlev+1)
     ! --------------------
     ! height of interfaces in column (positive up => most are negative)
@@ -155,6 +178,30 @@ module cvmix_kinds_and_types
     ! (non-temperature) tracers. Eventually may add support for momentum terms
     ! (would be 2D for x- and y-, respectively) but current implementation
     ! assumes momentum term is 0 everywhere.
+
+    ! TKE / IDEMIX  
+    ! diffusivity coefficients at interfaces
+    ! different coefficients for momentum (KappaM), temperature and
+    ! salinity  (KappaH) units: m^2/s
+    real(cvmix_r8), dimension(:), pointer :: KappaM_iface => NULL()
+    real(cvmix_r8), dimension(:), pointer :: KappaH_iface => NULL()
+    !currently not in use; necessary for energy consistent linking of parameterizations 
+    real(cvmix_r8), dimension(:), pointer :: Kappa_GM => NULL()
+    ! total energy of internal waves (m^2/s^2) 
+    real(cvmix_r8), dimension(:), pointer ::  E_iw    => NULL()
+    ! total dissipation of IW energy (m^2/s^3)
+    real(cvmix_r8), dimension(:), pointer :: iw_diss   => NULL()
+    ! dissipation parameter (s/m^2)
+    real(cvmix_r8), dimension(:), pointer :: alpha_c   => NULL()
+    ! Turbulent kinetic energy (m^2/s^2)
+    real(cvmix_r8), dimension(:), pointer :: tke   => NULL()
+    ! dissipation of TKE (m^2/s^3)
+    real(cvmix_r8), dimension(:), pointer :: tke_diss   => NULL()
+    ! square of vertical shear of horizontal velocity at column interfaces (1/s^2)
+    real(cvmix_r8), dimension(:), pointer :: Ssqr_iface => NULL()
+    ! squared buoyancy frequency (s^-2) 
+    real(cvmix_r8), dimension(:), pointer :: Nsqr_iface => NULL()
+
 
     ! Values at tracer points (dimsize = nlev)
     ! -----------------------

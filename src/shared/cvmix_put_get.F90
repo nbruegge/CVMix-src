@@ -172,6 +172,12 @@ contains
         CVmix_vars%LangmuirNumber = val
       case ('SimmonsCoeff')
         CVmix_vars%SimmonsCoeff = val
+      case ('forc_tke_surf')
+        CVmix_vars%forc_tke_surf = val
+      case ("forc_rho_surf")
+        CVmix_vars%forc_rho_surf = val
+      case ('dtime')
+        CVmix_vars%dtime = val
 
       case ("dzw")
 !        print*, "WARNING: you are setting the cell midpoint to midpoint ",    &
@@ -442,6 +448,31 @@ contains
           allocate(CVmix_vars%SchmittnerCoeff(CVmix_vars%max_nlev+1))
         end if
         CVmix_vars%SchmittnerCoeff(:) = val
+      case ("KappaM_iface")
+        if (.not.associated(CVmix_vars%KappaM_iface)) then
+          allocate(CVmix_vars%KappaM_iface(nlev+1))
+        end if
+        CVmix_vars%KappaM_iface(:) = val
+      case ("KappaH_iface")
+        if (.not.associated(CVmix_vars%KappaH_iface)) then
+          allocate(CVmix_vars%KappaH_iface(nlev+1))
+        end if
+        CVmix_vars%KappaH_iface(:) = val
+      case ("Ssqr_iface")
+        if (.not.associated(CVmix_vars%Ssqr_iface)) then
+          allocate(CVmix_vars%Ssqr_iface(nlev+1))
+        end if
+        CVmix_vars%Ssqr_iface(:) = val
+      case ("Nsqr_iface")
+        if (.not.associated(CVmix_vars%Nsqr_iface)) then
+          allocate(CVmix_vars%Nsqr_iface(nlev+1))
+        end if
+        CVmix_vars%Nsqr_iface(:) = val
+      case ("TKE")
+        if (.not.associated(CVmix_vars%TKE)) then
+          allocate(CVmix_vars%TKE(nlev+1))
+        end if
+        CVmix_vars%TKE(:) = val
 
       case default
         print*, "ERROR: ", trim(varname), " not a valid choice for cvmix_put_real_1D!"

@@ -32,6 +32,8 @@ module cvmix_utils
 ! !PUBLIC MEMBER FUNCTIONS:
   public :: cvmix_update_wrap
   public :: cvmix_att_name
+  public :: cvmix_update_tke
+  public :: solve_tridiag
 
 !EOP
 
@@ -161,6 +163,16 @@ contains
         cvmix_att_name = "UseSchmittnerSouthernOceanMods"
       case ("ltidal_max")
         cvmix_att_name = "ApplyTidalMixingCap"
+      case("forc_iw_bottom")
+        cvmix_att_name = "forc_iw_bottom"
+      case("forc_iw_surface")
+        cvmix_att_name = "forc_iw_surface"
+      case("forc_tke_surf")
+        cvmix_att_name = "forc_tke_surf"
+      case("forc_rho_surf")
+        cvmix_att_name = "forc_rho_surf"
+      case("dtime")
+        cvmix_att_name = "dtime"
 
       ! Variables on level interfaces
       case ("zw", "zw_iface")
@@ -191,6 +203,23 @@ contains
       case ("Snonlocal", "KPP_S_Nonlocal", "kpp_Snonlocal", "kpp_Stransport", &
             "kpp_Snonlocal_iface")
         cvmix_att_name = "kpp_Snonlocal_iface"
+
+      case("KappaM_iface")
+        cvmix_att_name = "KappaM_iface"
+      case("KappaH_iface")
+        cvmix_att_name = "KappaH_iface"
+      case("Ssqr_iface")
+        cvmix_att_name = "Ssqr_iface"
+      case("Nsqr_iface")
+        cvmix_att_name = "Nsqr_iface"
+      case("TKE")
+        cvmix_att_name = "TKE"
+      case("E_iw")
+        cvmix_att_name = "E_iw"
+      case("iw_diss")
+        cvmix_att_name = "iw_diss"
+      case("alpha_c")
+        cvmix_att_name = "alpha_c"
 
       ! Variables on level centers
       case ("z","zt","zt_cntr")
@@ -238,5 +267,125 @@ contains
 !EOC
 
   end function cvmix_att_name
+
+
+!=================================================================================
+  subroutine cvmix_update_tke(old_vals,nlev, tke_diss_out,new_tke_diss, tke_out,new_tke, KappaM_out, new_KappaM,           &
+                              KappaH_out, new_KappaH,E_iw_out, new_E_iw,&
+                              iw_diss_out, new_iw_diss)
+!
+!! !DESCRIPTION:
+!!  Update diffusivity values based on old_vals (either overwrite, sum, or find
+!!  the level-by-level max)
+!!  TKE & IDEMIX both use only the overwrite option
+!
+!! !INPUT PARAMETERS:
+    integer, intent(in) :: old_vals, nlev
+    real(cvmix_r8), dimension(nlev+1), optional, intent(in) ::     &
+      new_KappaM                                                  ,& !
+      new_KappaH                                                  ,& !
+      new_E_iw                                                    ,& !
+      new_iw_diss                                                 ,& !
+      new_tke                                                     ,& !
+      new_tke_diss                                                   !
+
+!! !OUTPUT PARAMETERS:
+    real(cvmix_r8), dimension(nlev+1), optional, intent(inout) ::  & !
+      KappaM_out                                                  ,& !
+      KappaH_out                                                  ,& !
+      E_iw_out                                                    ,& !
+      iw_diss_out                                                 ,& !
+      tke_out                                                     ,& !
+      tke_diss_out                                                   !  
+
+
+    integer :: kw
+
+
+    !CHARACTER(LEN=*), PARAMETER :: method_name = module_name//':cvmix_update_tke'
+
+
+
+    select case (old_vals)
+      case (CVMIX_SUM_OLD_AND_NEW_VALS)
+        if ((present(KappaM_out)).and.(present(new_KappaM))) &
+          KappaM_out = KappaM_out + new_KappaM
+        if ((present(KappaH_out)).and.(present(new_KappaH))) &
+          KappaH_out = KappaH_out + new_KappaH
+
+      case (CVMIX_MAX_OLD_AND_NEW_VALS)
+        do kw=1,nlev+1
+          if ((present(KappaM_out)).and.(present(new_KappaM))) &
+            KappaM_out(kw) = max(KappaM_out(kw), new_KappaM(kw))
+          if ((present(KappaH_out)).and.(present(new_KappaH))) &
+            KappaH_out(kw) = max(KappaH_out(kw), new_KappaH(kw))
+        end do
+!
+!      !This is the only option IDEMIX&TKE use to update to new values  
+      case (CVMIX_OVERWRITE_OLD_VAL)
+        if ((present(tke_diss_out)).and.(present(new_tke_diss))) then
+          tke_diss_out = new_tke_diss
+          print*, "updating tke_diss=",tke_diss_out
+        end if
+        if ((present(KappaH_out)).and.(present(new_KappaH))) &
+          KappaH_out = new_KappaH
+
+        if ((present(tke_out)).and.(present(new_tke))) then
+          tke_out = new_tke
+          print*, "updating tke"
+         end if
+        if ((present(KappaM_out)).and.(present(new_KappaM))) &
+          KappaM_out = new_KappaM
+
+        if ((present(E_iw_out)).and.(present(new_E_iw))) then
+          E_iw_out = new_E_iw
+        print*, "updating Internal wave energy"
+        end if
+        if ((present(iw_diss_out)).and.(present(new_iw_diss))) &
+          iw_diss_out = new_iw_diss
+      case DEFAULT
+        print*, "ERROR: do not know how to handle old values!"
+        stop 1
+        !CALL finish(method_name,'ERROR: do not know how to handle old values!')
+    end select
+
+  end subroutine cvmix_update_tke
+
+
+!=================================================================================
+  subroutine solve_tridiag(a,b,c,d,x,n)
+        implicit none
+  !---------------------------------------------------------------------------------
+  !        a - sub-diagonal (means it is the diagonal below the main diagonal)
+  !        b - the main diagonal
+  !        c - sup-diagonal (means it is the diagonal above the main diagonal)
+  !        d - right part
+  !        x - the answer
+  !        n - number of equations
+  !---------------------------------------------------------------------------------
+          integer,intent(in) :: n
+          real(cvmix_r8),dimension(n),intent(in) :: a,b,c,d
+          real(cvmix_r8),dimension(n),intent(out) :: x
+          real(cvmix_r8),dimension(n) :: cp,dp
+          real(cvmix_r8) :: m,fxa
+          integer i
+  
+  ! initialize c-prime and d-prime
+          cp(1) = c(1)/b(1)
+          dp(1) = d(1)/b(1)
+  ! solve for vectors c-prime and d-prime
+           do i = 2,n
+             m = b(i)-cp(i-1)*a(i)
+             fxa = 1D0/m
+             cp(i) = c(i)*fxa
+             dp(i) = (d(i)-dp(i-1)*a(i))*fxa
+           enddo
+  ! initialize x
+           x(n) = dp(n)
+  ! solve for x from the vectors c-prime and d-prime
+          do i = n-1, 1, -1
+            x(i) = dp(i)-cp(i)*x(i+1)
+          end do
+  end subroutine solve_tridiag
 
 end module cvmix_utils
