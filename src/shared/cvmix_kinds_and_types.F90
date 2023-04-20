@@ -201,6 +201,10 @@ module cvmix_kinds_and_types
     real(cvmix_r8), dimension(:), pointer :: Ssqr_iface => NULL()
     ! squared buoyancy frequency (s^-2) 
     real(cvmix_r8), dimension(:), pointer :: Nsqr_iface => NULL()
+    ! mixing length (m)
+    real(cvmix_r8), dimension(:), pointer :: tke_Lmix => NULL()
+    ! Prandtl number ()
+    real(cvmix_r8), dimension(:), pointer :: tke_Pr => NULL()
 
 
     ! Values at tracer points (dimsize = nlev)
