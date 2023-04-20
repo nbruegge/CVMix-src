@@ -34,6 +34,7 @@ if(CVMIX_BUILD_DRIVER)
       drivers/cvmix_bgrnd_BL.F90
       drivers/cvmix_ddiff_drv.F90
       drivers/cvmix_kpp_drv.F90
+      drivers/cvmix_tke_drv.F90
       drivers/cvmix_shear_drv.F90
       drivers/cvmix_tidal_Simmons.F90
    )
