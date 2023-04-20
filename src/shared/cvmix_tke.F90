@@ -42,6 +42,7 @@ save
 public :: init_tke
 public :: cvmix_coeffs_tke
 public :: cvmix_put_tke
+public :: integrate_tke
 
 
 !=================================================================================
@@ -365,48 +366,42 @@ end subroutine tke_wrap
 !=================================================================================
 
 subroutine integrate_tke( &
-                         !!i,                    & ! FIXME: nils: for debuging
-                         !!j,                    & ! FIXME: nils: for debuging
-                         !!tstep_count ,         & ! FIXME: nils: for debuging
-                         !tke_diss_out,         & ! FIXME: nils: today: delete?
-                         tke_old,              & ! FIXME: nils: today: rename?
-                         tke_new,              & ! FIXME: nils: today: rename?
-                         KappaM_out,           &
-                         KappaH_out,           &
-                         cvmix_int_1,          & ! FIXME: nils: for debuging
-                         cvmix_int_2,          & ! FIXME: nils: for debuging
-                         cvmix_int_3,          & ! FIXME: nils: for debuging
-                         dzw,                  &
-                         dzt,                  &
-                         nlev,                 &
-                         max_nlev,             &
-                         !old_tke_diss,         & ! FIXME: nils: today: delete?
-                         Ssqr,                 &
-                         Nsqr,                 & 
-                         tke_Tbpr,             & ! diagnostic
-                         tke_Tspr,             & ! diagnostic
-                         tke_Tdif,             & ! diagnostic
-                         tke_Tdis,             & ! diagnostic
-                         tke_Twin,             & ! diagnostic
-                         tke_Tiwf,             & ! diagnostic
-                         tke_Tbck,             & ! diagnostic
-                         tke_Ttot,             & ! diagnostic
-                         !tke,                  &
-                         tke_Lmix,             & ! diagnostic
-                         tke_Pr,               & ! diagnostic
-                         forc_tke_surf,        &
-                         E_iw,                 &
-                         dtime,                &
-                         !!bottom_fric,          &
-                         !!old_KappaM,           &
-                         !!old_KappaH,           &
-                         iw_diss,              & ! FIXME: nils: rename?
-                         forc_rho_surf,        &
-                         !Kappa_GM,             & ! FIXME: nils: today: delete?
-                         rho_ref,              & ! FIXME: today: put to initialize
-                         grav,                 & ! FIXME: today: put to initialize
-                         alpha_c,              & ! FIXME: today: put to initialize
-                         tke_userdef_constants)
+    !!i,                    & ! FIXME: nils: for debuging
+    !!j,                    & ! FIXME: nils: for debuging
+    !!tstep_count ,         & ! FIXME: nils: for debuging
+    dtime,                &
+    dzw,                  &
+    dzt,                  &
+    nlev,                 &
+    max_nlev,             &
+    tke_old,              & ! FIXME: nils: today: rename?
+    tke_new,              & ! FIXME: nils: today: rename?
+    Ssqr,                 &
+    Nsqr,                 & 
+    KappaM_out,           &
+    KappaH_out,           &
+    tke_Tbpr,             & ! diagnostic
+    tke_Tspr,             & ! diagnostic
+    tke_Tdif,             & ! diagnostic
+    tke_Tdis,             & ! diagnostic
+    tke_Twin,             & ! diagnostic
+    tke_Tiwf,             & ! diagnostic
+    tke_Tbck,             & ! diagnostic
+    tke_Ttot,             & ! diagnostic
+    cvmix_int_1,          & ! FIXME: nils: for debuging
+    cvmix_int_2,          & ! FIXME: nils: for debuging
+    cvmix_int_3,          & ! FIXME: nils: for debuging
+    tke_Lmix,             & ! diagnostic
+    tke_Pr,               & ! diagnostic
+    forc_tke_surf,        &
+    E_iw,                 &
+    iw_diss,              & ! FIXME: nils: rename?
+    forc_rho_surf,        &
+    rho_ref,              & ! FIXME: today: put to initialize
+    grav,                 & ! FIXME: today: put to initialize
+    alpha_c,              & ! FIXME: today: put to initialize
+    tke_userdef_constants &
+    )
 !subroutine integrate_tke(jc, blockNo, tstep_count)
   
   type(tke_type), intent(in), optional, target                 :: &
@@ -421,9 +416,6 @@ subroutine integrate_tke( &
   ! OLD values 
   real(cvmix_r8), dimension(max_nlev+1), intent(in)                :: & 
     tke_old                                                      ,& !
-    !old_tke_diss                                                 ,& !
-    !!old_KappaM                                                   ,& !
-    !!old_KappaH                                                   ,& !
     dzt                                                             !
   real(cvmix_r8), dimension(max_nlev+1), intent(in)             :: & 
     Ssqr                                                         ,& !
@@ -460,7 +452,7 @@ subroutine integrate_tke( &
     KappaH_out
   
   ! diagnostics
-  real(cvmix_r8), dimension(max_nlev+1), intent(out) ::                &
+  real(cvmix_r8), dimension(max_nlev+1), intent(out), optional ::  &
      tke_Tbpr                                                     ,&
      tke_Tspr                                                     ,&
      tke_Tdif                                                     ,&
@@ -469,13 +461,14 @@ subroutine integrate_tke( &
      tke_Tiwf                                                     ,&
      tke_Tbck                                                     ,&
      tke_Ttot                                                     ,&
-     !tke                                                          ,&
      tke_Lmix                                                     ,&
      tke_Pr                                                       !,&
-  real(cvmix_r8), dimension(max_nlev+1), intent(out) ::                &
+  real(cvmix_r8), dimension(max_nlev+1), intent(out), optional ::  &
      cvmix_int_1                                                  ,&
      cvmix_int_2                                                  ,&
      cvmix_int_3                                                
+
+! end in/out
   
   ! local variables
   real(cvmix_r8), dimension(max_nlev+1)                            :: &
