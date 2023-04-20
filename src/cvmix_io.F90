@@ -31,6 +31,8 @@ module cvmix_io
 
 !BOP
 ! !PUBLIC MEMBER FUNCTIONS:
+  public :: save_variable
+  public :: write_simulation_info
   public :: cvmix_io_open
   public :: cvmix_input_read
 #ifdef _NETCDF
@@ -1664,6 +1666,90 @@ contains
     print*, "----"
 
   end subroutine print_open_files
+
+  subroutine save_variable(path_data, var, varname, long_name, iostep, nrec, units) 
+    character(len=*)     :: path_data
+    character(len=*)     :: varname
+    character(len=*)     :: long_name
+    integer              :: iostep
+    integer              :: nrec
+    character(len=*)     :: units
+
+    integer               :: recnum
+    integer               :: bytes  = 4
+    character(len=24)     :: endian = "big_endian"
+    character(len=10)     :: tstepstr
+    character(len=128)    :: fname
+    integer               :: fid    = 25
+
+    ! FIXME: Does it work to use (:) without specifying exact dimension?
+    real*8, dimension(:)  :: var
+
+
+    ! --- tstepstr
+    write(tstepstr,"(I10.10)") iostep 
+
+    ! --- write data-file
+    !fname = trim(path_data) // trim(fprfx) // "." // tstepstr // ".data"
+    fname = trim(path_data) // &
+            trim(varname) // "." // tstepstr // ".data"
+    !write(*,*) trim(path_data)
+    !write(*,*) trim(varname)
+    !write(*,*) tstepstr
+    !stop
+    !write(*,*) varname, tstepstr, nrec
+    open( unit=fid, file=fname, form='unformatted', status='replace', &
+          access='direct', recl=bytes*nrec, convert=endian )
+    recnum = 1
+    write(fid, rec=recnum) sngl(var)
+    close(fid)
+
+    !! --- write meta-file
+    !!fname = trim(path_data) // trim(fprfx) // "." // tstepstr // ".meta"
+    !fname = trim(path_data) // &
+    !        trim(varname) // "." // tstepstr // ".meta"
+    !open( unit=fid, file=fname, status='replace' )
+    !write(fid, *) 'name         = ', varname
+    !write(fid, *) 'long_name    = ', long_name
+    !write(fid, *) 'iostep       = ', iostep
+    !write(fid, *) 'nrec         = ', nrec
+    !write(fid, *) 'units        = ', units
+    !close(fid)
+
+    ! --- write json-file for meta data
+    !fname = trim(path_data) // &
+    !        trim(varname) // "." // tstepstr // ".json"
+    fname = trim(path_data) // &
+            trim(varname) // ".json"
+    open( unit=fid, file=fname, status='replace' )
+    write(fid,*) '{'
+    write(fid,*) '"name":         "', varname, '",'
+    write(fid,*) '"long_name":    "', long_name, '",'
+    write(fid,*) '"iostep":       ', iostep, ','
+    write(fid,*) '"nrec":         ', nrec, ','
+    write(fid,*) '"units":        "', units, '"'
+    write(fid,*) '}'
+    close(fid)
+
+  end subroutine save_variable
+
+  subroutine write_simulation_info(path_data, simulation_name, nz) 
+    character(len=*)     :: path_data
+    character(len=*)     :: simulation_name
+    integer              :: nz
+
+    character(len=128)    :: fname
+    integer               :: fid    = 25
+
+    fname = trim(path_data) // &
+            trim(simulation_name) // ".json"
+    open( unit=fid, file=fname, status='replace' )
+    write(fid,*) '{'
+    write(fid,*) '"name":         "', simulation_name, '",'
+    write(fid,*) '"nz":            ', nz, ','
+    write(fid,*) '}'
+    close(fid)
+  end subroutine write_simulation_info
 
 end module cvmix_io
 
