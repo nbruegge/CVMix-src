@@ -560,6 +560,7 @@ subroutine integrate_tke( &
   a_tri = 0.0
   b_tri = 0.0
   c_tri = 0.0
+  mxl = 0.0
  
   !---------------------------------------------------------------------------------
   ! set tke_constants locally
