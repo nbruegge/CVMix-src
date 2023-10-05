@@ -11,6 +11,7 @@ f90pdf                                       \
        $SHARE/cvmix_ddiff.F90                \
        $SHARE/cvmix_kpp.F90                  \
        $SHARE/cvmix_tke.F90                  \
+       $SHARE/cvmix_idemix.F90               \
        $SHARE/cvmix_convection.F90           \
        $SHARE/cvmix_math.F90                 \
        $SHARE/cvmix_put_get.F90              \
@@ -22,6 +23,7 @@ f90pdf                                       \
        $DRIVE/cvmix_ddiff_drv.F90            \
        $DRIVE/cvmix_kpp_drv.F90              \
        $DRIVE/cvmix_tke_drv.F90              \
+       $DRIVE/cvmix_iwe_tke_drv.F90          \
        $SRC/cvmix_io.F90
 
 rm -f output.tex

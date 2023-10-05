@@ -130,6 +130,7 @@ DRIVER_OBJS = cvmix_bgrnd_BL.o      \
               cvmix_tidal_Simmons.o \
               cvmix_ddiff_drv.o     \
               cvmix_tke_drv.o       \
+              cvmix_iwe_tke_drv.o       \
               cvmix_kpp_drv.o
 ifeq ($(UCASE),TRUE)
   MODS_TMP = $(shell echo $(OBJS) | tr '[a-z]' '[A-Z]')

@@ -21,6 +21,7 @@ MODULES = cvmix_kinds_and_types.F90 \
           cvmix_ddiff.F90 \
           cvmix_kpp.F90 \
 					cvmix_tke.F90 \
+					cvmix_idemix.F90 \
           cvmix_math.F90 \
           cvmix_put_get.F90 \
           cvmix_shear.F90 \

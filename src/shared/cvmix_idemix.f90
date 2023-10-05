@@ -23,10 +23,10 @@ use cvmix_kinds_and_types,    only : cvmix_r8,                     &
                                       cvmix_PI,                    & 
                                       cvmix_global_params_type
 
-use cvmix_utils,              only : cvmix_update_tke, solve_tridiag
+use cvmix_utils,              only : solve_tridiag
 
 
-USE mo_exception,          ONLY: finish
+!USE mo_exception,          ONLY: finish
 
 implicit none
 private 
@@ -35,9 +35,11 @@ save
 
 !public member functions
 
-public :: init_idemix
-public :: calc_idemix_v0
+public :: cvmix_init_idemix
 public :: cvmix_coeffs_idemix
+public :: cvmix_put_idemix
+!public :: cvmix_coeffs_idemix_low
+public :: calc_idemix_v0
 public :: gofx2  ! fixme: only used by IDEMIX public?
 public :: hofx1  ! fixme: public?
 public :: hofx2  ! fixme: public?
@@ -48,137 +50,142 @@ public :: hofx2  ! fixme: public?
 !---------------------------------------------------------------------------------
 
 interface cvmix_coeffs_idemix
-    module procedure integrate_idemix  ! calculation ! FIXME: rename in cvmix_coeffs_low..
-    !module procedure idemix_wrap       ! necessary to handle old/new values and to hand over user_defined constants
+    module procedure cvmix_coeffs_idemix_low
+    module procedure cvmix_coeffs_idemix_wrap
 end interface cvmix_coeffs_idemix
 
-!---------------------------------------------------------------------------------
-! Interface to put values to IDEMIX variables
-!---------------------------------------------------------------------------------
-
-! FIXME: rename procedures
-interface idemix_put
-    module procedure vmix_tke_put_idemix_int
-    module procedure vmix_tke_put_idemix_real
-end interface idemix_put
+interface cvmix_put_idemix
+    module procedure cvmix_put_idemix_int
+    module procedure cvmix_put_idemix_real
+end interface cvmix_put_idemix
 
 !=================================================================================
 
-! types for Idemix
-type, public :: idemix_type
-private
+  ! cvmix_idemix_params_type contains the necessary parameters for IDEMIX mixing
+  type, public :: cvmix_idemix_params_type
+    private
 
- real(cvmix_r8) ::  &
-   tau_v            ,& ! time scale for vertical symmetrisation (sec)
-   tau_h            ,& ! time scale for horizontal symmetrisation, only necessary for lateral diffusion (sec)
-   gamma            ,& ! constant of order one derived from the shape of the spectrum in m space (dimensionless)
-   jstar            ,& ! spectral bandwidth in modes (dimensionless)
-   mu0                 ! dissipation parameter (dimensionless)
+       real(cvmix_r8) :: tau_v       ! time scale for vertical symmetrisation (sec)
+       real(cvmix_r8) :: tau_h       ! time scale for horizontal symmetrisation, only necessary for lateral diffusion (sec)
+       real(cvmix_r8) :: gamma        ! constant of order one derived from the shape of the spectrum in m space (dimensionless)
+       real(cvmix_r8) :: jstar        ! spectral bandwidth in modes (dimensionless)
+       real(cvmix_r8) :: mu0          ! dissipation parameter (dimensionless)
+      
+       ! Flag for what to do with old values of CVmix_vars%[MTS]diff  
+       integer :: handle_old_vals
+  end type cvmix_idemix_params_type
 
-! FIXME: nils: can handle_old_vals be deleted?
-! Flag for how to update old values 
-! Note: We don't need max or sum option
- integer :: handle_old_vals
-end type idemix_type
+  type(cvmix_idemix_params_type), target :: CVmix_idemix_params_saved
 
-type(idemix_type), target :: idemix_constants_saved 
-
-CHARACTER(LEN=*), PARAMETER :: module_name = 'cvmix_idemix'
-
+!CHARACTER(LEN=*), PARAMETER :: module_name = 'cvmix_idemix'
 
 contains
 
 !=================================================================================
 
-subroutine init_idemix(tau_v, tau_h, gamma,jstar,mu0,handle_old_vals,idemix_userdef_constants)
+subroutine cvmix_init_idemix(         &
+  tau_v, &
+  tau_h, &
+  gamma, &
+  jstar,  &
+  mu0,    &
+  old_vals,                           &
+  CVmix_idemix_params_user            &
+  )
 
-! This subroutine sets user or default values for IDEMIX parameters
+    !character(len=*), optional, intent(in) :: mix_scheme,                     &
+    !                                          old_vals
+    character(len=*), optional, intent(in) :: old_vals
 
-real(cvmix_r8),optional, intent(in) ::      &
-  tau_v                                    ,& ! 
-  tau_h                                    ,& ! 
-  gamma                                    ,& !
-  jstar                                    ,& !
-  mu0
+! !INPUT PARAMETERS:
+    real(cvmix_r8),optional, intent(in) ::      &
+      tau_v,                                    & 
+      tau_h,                                    & 
+      gamma,                                    &
+      jstar,                                    &
+      mu0
 
-type(idemix_type), intent(inout),target, optional :: idemix_userdef_constants
+! !OUTPUT PARAMETERS:
+    type(cvmix_idemix_params_type), optional, target, intent(inout) ::        &
+                                               CVmix_idemix_params_user
 
-CHARACTER(LEN=*), PARAMETER :: method_name = module_name//':init_idemix'
+!EOP
+!BOC
 
-integer,intent(in),optional :: handle_old_vals
+    type(cvmix_idemix_params_type), pointer :: CVmix_idemix_params_out
 
-! FIXME: not sure about the allowed ranges for idemix parameters, default values confirm with pyOM testcases
-if (present(tau_v)) then
-  if(tau_v.lt.1.d0*86400.0 .or. tau_v .gt. 100.d0*86400.0) then
-!    print*, "ERROR:tau_v can only be allowed_range"
-!    stop 1
-    CALL finish(method_name,'ERROR:tau_v can only be allowed_range')
-  end if
-  call idemix_put('tau_v', tau_v, idemix_userdef_constants)
-else
-  call idemix_put('tau_v',1.d0*86400.0 , idemix_userdef_constants)
-end if
+    if (present(CVmix_idemix_params_user)) then
+      CVmix_idemix_params_out => CVmix_idemix_params_user
+    else
+      CVmix_idemix_params_out => CVmix_idemix_params_saved
+    end if
 
-if (present(tau_h)) then
-  if(tau_h.lt. 0.01*864000. .or. tau_h .gt. 100.*86400.) then
-!    print*, "ERROR:tau_h can only be allowed_range"
-!    stop 1
-    CALL finish(method_name,'ERROR:tau_h can only be allowed_range')
-  end if
-  call idemix_put('tau_h', tau_h, idemix_userdef_constants)
-else
-  call idemix_put('tau_h', 15.d0*86400.0, idemix_userdef_constants)
-end if
 
-if (present(gamma)) then
-  if(gamma.lt. 1.d0 .or. gamma .gt. 3.d0) then
-!    print*, "ERROR:gamma can only be allowed_range"
-!    stop 1
-    CALL finish(method_name,'ERROR:gamma can only be allowed_range')
-  end if
-  call idemix_put('gamma', gamma, idemix_userdef_constants)
-else
-  call idemix_put('gamma', 1.57d0, idemix_userdef_constants)
-end if
+    if (present(tau_v)) then
+      call cvmix_put_idemix('tau_v', tau_v,  CVmix_idemix_params_user)
+    else
+      call cvmix_put_idemix('tau_v',1.d0*86400.0 ,  CVmix_idemix_params_user)
+    end if
+    
+    if (present(tau_h)) then
+      call cvmix_put_idemix('tau_h', tau_h,  CVmix_idemix_params_user)
+    else
+      call cvmix_put_idemix('tau_h', 15.d0*86400.0,  CVmix_idemix_params_user)
+    end if
+    
+    if (present(gamma)) then
+      call cvmix_put_idemix('gamma', gamma,  CVmix_idemix_params_user)
+    else
+      call cvmix_put_idemix('gamma', 1.57d0,  CVmix_idemix_params_user)
+    end if
+    
+    if (present(jstar)) then
+      call cvmix_put_idemix('jstar', jstar,  CVmix_idemix_params_user)
+    else
+      call cvmix_put_idemix('jstar', 10.d0 ,  CVmix_idemix_params_user)
+    end if
 
-if (present(jstar)) then
-  if(jstar.lt. 5.d0 .or. jstar .gt. 15.d0) then
-!    print*, "ERROR:jstar can only be allowed_range"
-!    stop 1
-    CALL finish(method_name,'ERROR:jstar can only be allowed_range')
-  end if
-  call idemix_put('jstar', jstar, idemix_userdef_constants)
-else
-  call idemix_put('jstar', 10.d0 , idemix_userdef_constants)
-end if
+    if (present(mu0)) then
+      call cvmix_put_idemix('mu0', mu0,  CVmix_idemix_params_user)
+    else
+      call cvmix_put_idemix('mu0', 4.d0/3.0 ,  CVmix_idemix_params_user)
+    end if
 
-if (present(mu0)) then
-  if(mu0.lt. 0.d0 .or. mu0 .gt. 3.d0) then
-!    print*, "ERROR: mu0 can only be allowed_range"
-!    stop 1
-    CALL finish(method_name,'ERROR: mu0 can only be allowed_range')
-  end if
-  call idemix_put('mu0', mu0, idemix_userdef_constants)
-else
-  call idemix_put('mu0', 4.d0/3.0 , idemix_userdef_constants)
-end if
 
-if (present(handle_old_vals)) then
-  if(handle_old_vals.lt. 1 .or. handle_old_vals.gt. 3 ) then
-!    print*, "ERROR:handle_old_vals can only be 1 to 3"
-!    stop 1
-    CALL finish(method_name,'ERROR:handle_old_vals can only be 1 to 3')
-  end if
-  call idemix_put('handle_old_vals', handle_old_vals, idemix_userdef_constants)
-else
-  call idemix_put('handle_old_vals', 1, idemix_userdef_constants)
-end if
+    if (present(old_vals)) then
+      select case (trim(old_vals))
+        case ("overwrite")
+          call cvmix_put_idemix('handle_old_vals', CVMIX_OVERWRITE_OLD_VAL,    &
+                               cvmix_idemix_params_user)
+        case ("sum")
+          call cvmix_put_idemix('handle_old_vals', CVMIX_SUM_OLD_AND_NEW_VALS, &
+                               cvmix_idemix_params_user)
+        case ("max")
+          call cvmix_put_idemix('handle_old_vals', CVMIX_MAX_OLD_AND_NEW_VALS, &
+                               cvmix_idemix_params_user)
+        case DEFAULT
+          print*, "ERROR: ", trim(old_vals), " is not a valid option for ",   &
+                  "handling old values of diff and visc."
+          stop 1
+      end select
+    else
+      call cvmix_put_idemix('handle_old_vals', CVMIX_OVERWRITE_OLD_VAL,        &
+                               cvmix_idemix_params_user)
+    end if
 
-end subroutine init_idemix
+end subroutine cvmix_init_idemix
 
 !=================================================================================
 
-subroutine idemix_wrap(Vmix_vars, idemix_userdef_constants)
+! !IROUTINE: cvmix_coeffs_idemix_wrap
+! !INTERFACE:
+
+  subroutine cvmix_coeffs_idemix_wrap(CVmix_vars,  CVmix_idemix_params_user)
+
+! !DESCRIPTION:
+!  Computes vertical diffusion coefficients for the KPP boundary layer mixing
+!  parameterization.
+!
 ! FIXME: nils: this subroutine is never called but it is CVMix coding standard. 
 ! Here cvmix_coeffs_idemix is
 ! called directly. If this is used first debug it.
@@ -186,115 +193,125 @@ subroutine idemix_wrap(Vmix_vars, idemix_userdef_constants)
 ! FIXME: nils: Do these comments make sence for anyone?
 ! This subroutine is necessary to handle old/new values and to hand over the IDEMIX parameter set in previous subroutine
 ! This subroutine should be called from calling ocean model or driver
-
-type(idemix_type), intent(in), optional, target :: idemix_userdef_constants
-
-type(cvmix_data_type), intent(inout) :: Vmix_vars
-
-real(cvmix_r8), dimension(Vmix_vars%max_nlev+1) ::       & 
-  new_E_iw                                          ,& 
-  cvmix_int_1                                       ,&
-  cvmix_int_2                                       ,&
-  cvmix_int_3                                       ,&
-  iwe_Ttot                                          ,&
-  iwe_Tdif                                          ,&
-  iwe_Thdi                                          ,&
-  iwe_Tdis                                          ,&
-  iwe_Tsur                                          ,&
-  iwe_Tbot                                          ,&
-  new_KappaM                                        ,&
-  new_KappaH                                        ,&
-  c0                                                ,&
-  v0                                                ,&
-  new_iw_diss                                       ! 
-
-integer ::                                           &
-  nlev                                              ,&
-  max_nlev                                          !
-! FIXME: nils: for debugging delet later
-!integer :: i,j, tstep_count
-logical :: debug
-
-type(idemix_type), pointer :: idemix_constants_in
-
-CHARACTER(LEN=*), PARAMETER :: method_name = module_name//':idemix_wrap'
-
-idemix_constants_in => idemix_constants_saved
-if (present(idemix_userdef_constants)) then
-  idemix_constants_in => idemix_userdef_constants
-end if
-
-nlev = Vmix_vars%nlev
-max_nlev = Vmix_vars%max_nlev
+!
+!\\
+!\\
+!
+! !USES:
+!  only those used by entire module.
 
 
-! FIXME: nils: put a security stop in case this routine is called in the current state
-! call to actual computation of IDEMIX parameterization
-!write(*,*) 'I am wrapping'
-!stop
-CALL finish(method_name,'I am wrapping')
+    type(cvmix_idemix_params_type), intent(in), optional, target ::           &
+                                              CVmix_idemix_params_user
 
-call cvmix_coeffs_idemix( &
-                         ! parameter
-                         dzw             = Vmix_vars%dzw,             &
-                         dzt             = Vmix_vars%dzt,             &
-                         nlev            = nlev,                      &
-                         max_nlev        = max_nlev,                  &
-                         dtime           = Vmix_vars%dtime,           &
-                         coriolis        = Vmix_vars%coriolis,        &
-                         ! essentials
-                         iwe_old         = Vmix_vars%E_iw,            &
-                         iwe_new         = new_E_iw,                  &
-                         forc_iw_surface = Vmix_vars%forc_iw_surface, &
-                         forc_iw_bottom  = Vmix_vars%forc_iw_bottom,  &
-                         ! FIXME: nils: better output IDEMIX Ri directly
-                         alpha_c         = Vmix_vars%alpha_c,         &
-                         ! only for Osborn shortcut 
-                         ! FIXME: nils: put this to cvmix_tke
-                         KappaM_out      = new_KappaM,                &
-                         KappaH_out      = new_KappaH,                &
-                         Nsqr            = Vmix_vars%Nsqr_iface,      &
-                         ! diagnostics
-                         iwe_Ttot        = iwe_Ttot,                  &
-                         iwe_Tdif        = iwe_Tdif,                  &
-                         iwe_Thdi        = iwe_Thdi,                  &
-                         iwe_Tdis        = iwe_Tdis,                  &
-                         iwe_Tsur        = iwe_Tsur,                  &
-                         iwe_Tbot        = iwe_Tbot,                  &
-                         c0              = c0,                        &
-                         v0              = v0,                        &
-                         ! debugging
-                         debug = debug,             & ! FIXME: nils: for debuging
-                         !i = i,                     & ! FIXME: nils: for debuging
-                         !j = j,                     & ! FIXME: nils: for debuging
-                         !tstep_count = tstep_count, & ! FIXME: nils: for debuging
-                         cvmix_int_1     = cvmix_int_1,               &
-                         cvmix_int_2     = cvmix_int_2,               &
-                         cvmix_int_3     = cvmix_int_3,               &
-                         idemix_userdef_constants = idemix_userdef_constants &
-                         )
+! !INPUT PARAMETERS:
+    type(cvmix_data_type), intent(inout) :: CVmix_vars
 
-! FIXME: nils: This should probably be cvmix_update_idemix. However, it is not used
-! anyway.
-! update Vmix_vars to new values
-!call cvmix_update_tke(idemix_constants_in%handle_old_vals,            &
-!                      nlev,                                           &
-!                      iw_diss_out = Vmix_vars%iw_diss,                &
-!                      new_iw_diss = new_iw_diss,                      &
-!                      iwe_new     = Vmix_vars%E_iw,                   &
-!                      new_E_iw    = new_E_iw)
+!EOP
+!BOC
 
-end subroutine idemix_wrap
+    real(cvmix_r8), dimension(CVmix_vars%max_nlev+1) ::       & 
+      new_E_iw                                          ,& 
+      cvmix_int_1                                       ,&
+      cvmix_int_2                                       ,&
+      cvmix_int_3                                       ,&
+      iwe_Ttot                                          ,&
+      iwe_Tdif                                          ,&
+      !iwe_Thdi                                          ,&
+      iwe_Tdis                                          ,&
+      iwe_Tsur                                          ,&
+      iwe_Tbot                                          ,&
+      new_KappaM                                        ,&
+      new_KappaH                                        ,&
+      c0                                                ,&
+      v0!                                                ,&
+      !new_iw_diss                                       ! 
+    
+    integer ::                                           &
+      nlev                                              ,&
+      max_nlev                                          !
+    ! FIXME: nils: for debugging delet later
+    !integer :: i,j, tstep_count
+    !logical :: debug
+    
+    type(cvmix_idemix_params_type), pointer :: idemix_constants_in
+    
+    !CHARACTER(LEN=*), PARAMETER :: method_name = module_name//':cvmix_coeffs_idemix_wrap'
+    
+    idemix_constants_in => CVmix_idemix_params_saved
+    if (present( CVmix_idemix_params_user)) then
+      idemix_constants_in =>  CVmix_idemix_params_user
+    end if
+    nlev = CVmix_vars%nlev
+    max_nlev = CVmix_vars%max_nlev
+    
+    
+    ! FIXME: nils: put a security stop in case this routine is called in the current state
+    ! call to actual computation of IDEMIX parameterization
+    !write(*,*) 'I am wrapping'
+    !stop
+    !CALL finish(method_name,'I am wrapping')
+    
+    call cvmix_coeffs_idemix( &
+                             ! parameter
+                             dtime           = CVmix_vars%dtime,           &
+                             dzw             = CVmix_vars%dzw,             &
+                             dzt             = CVmix_vars%dzt,             &
+                             nlev            = nlev,                      &
+                             max_nlev        = max_nlev,                  &
+                             coriolis        = CVmix_vars%coriolis,        &
+                             ! essentials
+                             iwe_old         = CVmix_vars%E_iw,            &
+                             iwe_new         = new_E_iw,                  &
+                             forc_iw_surface = CVmix_vars%forc_iw_surface, &
+                             forc_iw_bottom  = CVmix_vars%forc_iw_bottom,  &
+                             ! FIXME: nils: better output IDEMIX Ri directly
+                             alpha_c         = CVmix_vars%alpha_c,         &
+                             ! only for Osborn shortcut 
+                             ! FIXME: nils: put this to cvmix_tke
+                             KappaM_out      = new_KappaM,                &
+                             KappaH_out      = new_KappaH,                &
+                             Nsqr            = CVmix_vars%Nsqr_iface,      &
+                             ! diagnostics
+                             iwe_Ttot        = iwe_Ttot,                  &
+                             iwe_Tdif        = iwe_Tdif,                  &
+                             !iwe_Thdi        = iwe_Thdi,                  &
+                             iwe_Tdis        = iwe_Tdis,                  &
+                             iwe_Tsur        = iwe_Tsur,                  &
+                             iwe_Tbot        = iwe_Tbot,                  &
+                             c0              = c0,                        &
+                             v0              = v0,                        &
+                             ! debugging
+                             !debug = debug,             & ! FIXME: nils: for debuging
+                             !i = i,                     & ! FIXME: nils: for debuging
+                             !j = j,                     & ! FIXME: nils: for debuging
+                             !tstep_count = tstep_count, & ! FIXME: nils: for debuging
+                             cvmix_int_1     = cvmix_int_1,               &
+                             cvmix_int_2     = cvmix_int_2,               &
+                             cvmix_int_3     = cvmix_int_3,               &
+                             CVmix_idemix_params_user =  CVmix_idemix_params_user)
+    
+    ! FIXME: nils: This should probably be cvmix_update_idemix. However, it is not used
+    ! anyway.
+    ! update CVmix_vars to new values
+    !call cvmix_update_tke(idemix_constants_in%handle_old_vals,            &
+    !                      nlev,                                           &
+    !                      iw_diss_out = CVmix_vars%iw_diss,                &
+    !                      new_iw_diss = new_iw_diss,                      &
+    !                      iwe_new     = CVmix_vars%E_iw,                   &
+    !                      new_E_iw    = new_E_iw)
+
+  end subroutine cvmix_coeffs_idemix_wrap
 
 subroutine calc_idemix_v0(nlev, max_nlev, Nsqr, dzw, coriolis, &
-                          v0, debug, idemix_userdef_constants)
+                          v0,  CVmix_idemix_params_user)
   integer, intent(in) ::                                          &
     nlev, max_nlev                                                !,&
 
   real(cvmix_r8), intent(in)                              ::      & 
     coriolis                                                        !
 
-  logical, intent(in) :: debug
+  !logical, intent(in) :: debug
 
   real(cvmix_r8), dimension(max_nlev+1), intent(in) ::                &
     dzw
@@ -321,13 +338,13 @@ subroutine calc_idemix_v0(nlev, max_nlev, Nsqr, dzw, coriolis, &
     k
 
 
-  type(idemix_type), intent(in), optional, target :: idemix_userdef_constants
-  type(idemix_type), pointer :: idemix_constants_in
+  type(cvmix_idemix_params_type), intent(in), optional, target ::  CVmix_idemix_params_user
+  type(cvmix_idemix_params_type), pointer :: idemix_constants_in
 
   ! FIXME: nils: Is this necessary?
-  idemix_constants_in => idemix_constants_saved
-  if (present(idemix_userdef_constants)) then
-    idemix_constants_in => idemix_userdef_constants
+  idemix_constants_in => CVmix_idemix_params_saved
+  if (present( CVmix_idemix_params_user)) then
+    idemix_constants_in =>  CVmix_idemix_params_user
   end if
 
   ! set idemix_constants locally
@@ -369,13 +386,13 @@ end subroutine calc_idemix_v0
 
 !=================================================================================
 ! This subroutine contains the actual computation of IDEMIX
-subroutine integrate_idemix( &
+subroutine cvmix_coeffs_idemix_low( &
                             ! parameter
+                            dtime,                 &
                             dzw,                   &
                             dzt,                   &
                             nlev,                  &
                             max_nlev,              &
-                            dtime,                 &
                             coriolis,              &
                             ! essentials
                             iwe_old,               & ! in
@@ -392,25 +409,25 @@ subroutine integrate_idemix( &
                             ! diagnostics
                             iwe_Ttot,              & ! diagnostic
                             iwe_Tdif,              & ! diagnostic
-                            iwe_Thdi,              & ! diagnostic
+                            !iwe_Thdi,              & ! diagnostic
                             iwe_Tdis,              & ! diagnostic
                             iwe_Tsur,              & ! diagnostic
                             iwe_Tbot,              & ! diagnostic
                             c0,                    &
                             v0,                    &
                             ! debugging
-                            debug,                 & ! FIXME: nils: for debuging
+                            !debug,                 & ! FIXME: nils: for debuging
                             !i,                     & ! FIXME: nils: for debuging
                             !j,                     & ! FIXME: nils: for debuging
                             !tstep_count,           & ! FIXME: nils: for debuging
                             cvmix_int_1,           & ! FIXME: nils: for debuging
                             cvmix_int_2,           & ! FIXME: nils: for debuging
                             cvmix_int_3,           & ! FIXME: nils: for debuging
-                            idemix_userdef_constants &
+                             CVmix_idemix_params_user &
                             )
 
   
-   type(idemix_type), intent(in), optional, target :: idemix_userdef_constants
+   type(cvmix_idemix_params_type), intent(in), optional, target ::  CVmix_idemix_params_user
   
    integer, intent(in) ::                                          &
      nlev                                                         ,&
@@ -422,7 +439,7 @@ subroutine integrate_idemix( &
   
    ! FIXME: nils: for debuging
    !integer, intent(in) :: i, j, tstep_count
-   logical, intent(in) :: debug
+   !logical, intent(in) :: debug
   
    real(cvmix_r8), dimension(max_nlev), intent(in) ::                &
      dzw
@@ -449,8 +466,8 @@ subroutine integrate_idemix( &
      v0                                                           ,&
      alpha_c
 
-   real(cvmix_r8), dimension(max_nlev+1), intent(in) ::               &
-     iwe_Thdi
+   !real(cvmix_r8), dimension(max_nlev+1), intent(in) ::               &
+   !  iwe_Thdi
   
   real(cvmix_r8), intent(in)                              ::      & 
     forc_iw_bottom                                               ,& !
@@ -459,7 +476,7 @@ subroutine integrate_idemix( &
     coriolis                                                        !
  
   integer                                                 ::      &
-    k, ks, ke, n
+    k
  
   ! coefficients for the tri-diagonal solver
   real(cvmix_r8), dimension(max_nlev+1)                       ::      &
@@ -489,7 +506,7 @@ subroutine integrate_idemix( &
   real(cvmix_r8)                                          ::      & 
     fxa 
  
-  type(idemix_type), pointer ::idemix_constants_in
+  type(cvmix_idemix_params_type), pointer ::idemix_constants_in
 
   ! initialize variables
   iwe_new     = 0.0_cvmix_r8
@@ -516,9 +533,9 @@ subroutine integrate_idemix( &
   forc        = 0.0_cvmix_r8
  
   ! FIXME: nils: Is this necessary?
-  idemix_constants_in => idemix_constants_saved
-  if (present(idemix_userdef_constants)) then
-    idemix_constants_in => idemix_userdef_constants
+  idemix_constants_in => CVmix_idemix_params_saved
+  if (present( CVmix_idemix_params_user)) then
+    idemix_constants_in =>  CVmix_idemix_params_user
   end if
  
   ! set idemix_constants locally
@@ -697,7 +714,7 @@ subroutine integrate_idemix( &
   !endif
 !  endif
  
-end subroutine integrate_idemix
+end subroutine cvmix_coeffs_idemix_low
 
 !=================================================================================
 
@@ -737,70 +754,79 @@ end function hofx1
 
 !=================================================================================
 
-subroutine vmix_tke_put_idemix_real(varname,val,idemix_userdef_constants)
-
-! This subroutine puts real values to IDEMIX variables
-!IN
-  character(len=*),          intent(in) :: varname
-  real(cvmix_r8),            intent(in) :: val
-!OUT   
-  type(idemix_type), intent(inout), target, optional:: idemix_userdef_constants
-  type(idemix_type), pointer :: idemix_constants_out
-
-  CHARACTER(LEN=*), PARAMETER :: method_name = module_name//':vmix_tke_put_idemix_real'
-
-  idemix_constants_out=>idemix_constants_saved
-  if (present(idemix_userdef_constants)) then
-    idemix_constants_out=> idemix_userdef_constants
-  end if
-  
-select case(trim(varname))
-
-    case('tau_v') 
-      idemix_constants_out%tau_v= val
-    case('tau_h') 
-      idemix_constants_out%tau_h= val
-    case('jstar') 
-      idemix_constants_out%jstar= val
-    case('gamma') 
-      idemix_constants_out%gamma = val
-    case('mu0') 
-      idemix_constants_out%mu0 = val
-   
-    case DEFAULT
-!      print*, "ERROR:", trim(varname), " not a valid choice"
-!      stop 1
-      CALL finish(method_name,'ERROR: '//TRIM(varname)//' not a valid choice')
-
-end select
-
-end subroutine vmix_tke_put_idemix_real
 
 !=================================================================================
 
-subroutine vmix_tke_put_idemix_int(varname,val,idemix_userdef_constants)
+subroutine cvmix_put_idemix_int(varname,val, CVmix_idemix_params_user)
 
 ! This subroutine puts integer values to IDEMIX variables
 !IN
   character(len=*),           intent(in) :: varname
   integer,                    intent(in) :: val
 !OUT   
-  type(idemix_type), intent(inout), target, optional:: idemix_userdef_constants
-  type(idemix_type), pointer :: idemix_constants_out
+  type(cvmix_idemix_params_type), intent(inout), target, optional::  CVmix_idemix_params_user
+  type(cvmix_idemix_params_type), pointer :: idemix_constants_out
 
-  idemix_constants_out=>idemix_constants_saved
-  if (present(idemix_userdef_constants)) then
-    idemix_constants_out=> idemix_userdef_constants
+  idemix_constants_out=>CVmix_idemix_params_saved
+  if (present( CVmix_idemix_params_user)) then
+    idemix_constants_out=>  CVmix_idemix_params_user
   end if
 
   select case(trim(varname))
 
+    ! FIXME: can be deleted
     case('handle_old_vals')
       idemix_constants_out%handle_old_vals=val
     
   end select
     
-end subroutine vmix_tke_put_idemix_int
+end subroutine cvmix_put_idemix_int
+
+subroutine cvmix_put_idemix_real(varname, val, CVmix_idemix_params_user)
+
+! !DESCRIPTION:
+!  Write a real value into a cvmix\_idemix\_params\_type variable.
+!\\
+!\\
+
+! !USES:
+!  Only those used by entire module.
+
+! !INPUT PARAMETERS:
+    character(len=*), intent(in) :: varname
+    real(cvmix_r8),   intent(in) :: val
+
+! !OUTPUT PARAMETERS:
+    type(cvmix_idemix_params_type), intent(inout), target, optional ::           &
+                                              CVmix_idemix_params_user
+
+!EOP
+!BOC
+
+    type(cvmix_idemix_params_type), pointer :: CVmix_idemix_params_out
+
+    CVmix_idemix_params_out => CVmix_idemix_params_saved
+    if (present(CVmix_idemix_params_user)) then
+      CVmix_idemix_params_out => CVmix_idemix_params_user
+    end if
+
+  select case(trim(varname))
+      case ('tau_v')
+        CVmix_idemix_params_out%tau_v = val
+      case ('tau_h')
+        CVmix_idemix_params_out%tau_h = val
+      case ('gamma')
+        CVmix_idemix_params_out%gamma = val
+      case ('jstar')
+        CVmix_idemix_params_out%jstar = val
+      case ('mu0')
+        CVmix_idemix_params_out%mu0 = val
+      case DEFAULT
+        print*, "ERROR: ", trim(varname), " not a valid choice!"
+        stop 1
+  end select
+    
+end subroutine cvmix_put_idemix_real
 
 !=================================================================================
 

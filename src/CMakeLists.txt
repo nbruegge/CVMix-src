@@ -8,6 +8,7 @@ target_sources( cvmix_objects PRIVATE
    shared/cvmix_ddiff.F90
    shared/cvmix_kpp.F90
    shared/cvmix_tke.F90
+   shared/cvmix_idemix.F90
    shared/cvmix_math.F90
    shared/cvmix_put_get.F90
    shared/cvmix_shear.F90
@@ -35,6 +36,7 @@ if(CVMIX_BUILD_DRIVER)
       drivers/cvmix_ddiff_drv.F90
       drivers/cvmix_kpp_drv.F90
       drivers/cvmix_tke_drv.F90
+      drivers/cvmix_iwe_tke_drv.F90
       drivers/cvmix_shear_drv.F90
       drivers/cvmix_tidal_Simmons.F90
    )
